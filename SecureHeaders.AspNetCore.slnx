@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/samples/">
+    <Project Path="samples/ApiOnlySample/ApiOnlySample.csproj" />
+    <Project Path="samples/MinimalApiSample/MinimalApiSample.csproj" />
+    <Project Path="samples/ReactSpaSample/ReactSpaSample.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/SecureHeaders.AspNetCore/SecureHeaders.AspNetCore.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/SecureHeaders.AspNetCore.Tests/SecureHeaders.AspNetCore.Tests.csproj" />
+  </Folder>
+</Solution>
