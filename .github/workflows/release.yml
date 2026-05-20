@@ -50,9 +50,22 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+            echo "TAG=v${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
           else
             echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+            echo "TAG=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
           fi
+
+      - name: Create and push tag (workflow_dispatch only)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # Delete existing tag if it already exists so we can re-tag at HEAD
+          git tag -d "${{ steps.version.outputs.TAG }}" 2>/dev/null || true
+          git push origin --delete "${{ steps.version.outputs.TAG }}" 2>/dev/null || true
+          git tag -a "${{ steps.version.outputs.TAG }}" -m "Release ${{ steps.version.outputs.TAG }}"
+          git push origin "${{ steps.version.outputs.TAG }}"
 
       - name: Restore
         run: dotnet restore
@@ -97,6 +110,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.version.outputs.TAG }}
           files: ./artifacts/*.nupkg
           generate_release_notes: true
           draft: false
