@@ -1,6 +1,5 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using SecureHeaders.AspNetCore.Internal;
@@ -57,6 +56,11 @@ public static class EndpointConventionBuilderExtensions
         SecureHeadersOptions options)
         where TBuilder : IEndpointConventionBuilder
     {
+        // Pre-compute both caches at registration time (once per endpoint, not per request).
+        // The correct cache is selected cheaply per-request based on the environment.
+        var prodCache = new HeaderValueCache(options, isProduction: true);
+        var devCache  = new HeaderValueCache(options, isProduction: false);
+
         // Use Finally so the RequestDelegate is already compiled when we wrap it.
         builder.Finally(endpointBuilder =>
         {
@@ -69,7 +73,7 @@ public static class EndpointConventionBuilderExtensions
                 context.Response.OnStarting(() =>
                 {
                     var env = context.RequestServices.GetRequiredService<IWebHostEnvironment>();
-                    var cache = new HeaderValueCache(options, env.IsProduction());
+                    var cache = env.IsProduction() ? prodCache : devCache;
                     SecureHeadersApplicator.Apply(
                         context.Response.Headers,
                         cache,

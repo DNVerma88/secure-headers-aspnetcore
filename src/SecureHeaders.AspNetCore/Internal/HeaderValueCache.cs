@@ -32,8 +32,6 @@ internal sealed class HeaderValueCache
     internal readonly bool EmitReportingEndpoints;
     internal readonly string? ReportingEndpointsValue;
 
-    internal readonly bool RemoveServerHeader;
-    internal readonly bool RemoveXPoweredByHeader;
     internal readonly IReadOnlyList<string> HeadersToRemove;
     internal readonly IReadOnlyList<PathString> ExcludedPaths;
 
@@ -137,9 +135,6 @@ internal sealed class HeaderValueCache
         ReportingEndpointsValue = options.ReportingEndpointsValue;
 
         // Header removal
-        RemoveServerHeader = options.RemoveServerHeader;
-        RemoveXPoweredByHeader = options.RemoveXPoweredByHeader;
-
         var removeList = new List<string>();
         if (options.RemoveServerHeader)
             removeList.Add(HeaderNames.Server);
@@ -181,4 +176,3 @@ internal sealed class HeaderValueCache
         return false;
     }
 }
-
