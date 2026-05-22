@@ -54,6 +54,9 @@ internal sealed class SecureHeadersOptionsValidator : IValidateOptions<SecureHea
         if (!string.IsNullOrEmpty(options.CspPolicy))
             CheckCrlf(errors, nameof(options.CspPolicy), options.CspPolicy);
 
+        if (!string.IsNullOrEmpty(options.CspReportUri))
+            CheckCrlf(errors, nameof(options.CspReportUri), options.CspReportUri);
+
         if (!string.IsNullOrEmpty(options.ReportingEndpointsValue))
             CheckCrlf(errors, nameof(options.ReportingEndpointsValue), options.ReportingEndpointsValue);
 

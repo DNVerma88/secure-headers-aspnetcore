@@ -135,6 +135,23 @@ public sealed class SecureHeadersOptionsValidatorTests
     [Theory]
     [InlineData("\r")]
     [InlineData("\n")]
+    [InlineData("\r\n")]
+    [InlineData("\0")]
+    public void CspReportUri_WithInvalidChars_ShouldFail(string injection)
+    {
+        var result = Validate(o =>
+        {
+            o.EnableCsp = true;
+            o.CspPolicy = "default-src 'self';";
+            o.CspReportUri = "https://reports.example.com/csp" + injection + "X-Injected: evil";
+        });
+        result.Failed.Should().BeTrue();
+        result.Failures.Should().Contain(f => f.Contains(nameof(SecureHeadersOptions.CspReportUri)));
+    }
+
+    [Theory]
+    [InlineData("\r")]
+    [InlineData("\n")]
     public void CustomHeaders_WithInvalidCharsInName_ShouldThrow(string injection)
     {
         // CRLF in CustomHeader name/value is caught in the constructor.

@@ -91,6 +91,13 @@ internal sealed class HeaderValueCache
             if (!string.IsNullOrWhiteSpace(options.CspReportUri)
                 && !policy.Contains("report-uri", StringComparison.OrdinalIgnoreCase))
             {
+                // Guard against HTTP response splitting — CspReportUri must not contain CR/LF/NUL.
+                if (HeaderSecurity.ContainsInvalidChars(options.CspReportUri))
+                    throw new InvalidOperationException(
+                        $"{nameof(options.CspReportUri)} contains invalid CR/LF/NUL characters " +
+                        "that would enable HTTP response splitting. " +
+                        "Ensure the URI contains only valid RFC 7230 header value characters.");
+
                 policy = policy.TrimEnd(' ', ';') + $"; report-uri {options.CspReportUri};";
             }
 

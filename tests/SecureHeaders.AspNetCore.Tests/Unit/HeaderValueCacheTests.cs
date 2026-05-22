@@ -107,6 +107,24 @@ public sealed class HeaderValueCacheTests
         cache.CspValue.Should().Contain("report-uri https://existing.example.com");
     }
 
+    [Theory]
+    [InlineData("\r")]
+    [InlineData("\n")]
+    [InlineData("\r\n")]
+    [InlineData("\0")]
+    public void CspReportUri_WithInvalidChars_ThrowsInvalidOperationException(string injection)
+    {
+        var opts = new SecureHeadersOptions
+        {
+            EnableCsp = true,
+            CspPolicy = "default-src 'self'",
+            CspReportUri = "https://csp.example.com/report" + injection + "X-Injected: evil",
+        };
+        var act = () => new HeaderValueCache(opts, isProduction: false);
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*CspReportUri*");
+    }
+
     // ── X-XSS-Protection ─────────────────────────────────────────────────
 
     [Fact]
