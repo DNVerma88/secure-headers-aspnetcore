@@ -91,7 +91,7 @@ jobs:
           dotnet pack
           src/SecureHeaders.AspNetCore/SecureHeaders.AspNetCore.csproj
           --configuration Release
-          --no-build
+          --no-restore
           /p:Version=${{ steps.version.outputs.VERSION }}
           --output ./artifacts
 
