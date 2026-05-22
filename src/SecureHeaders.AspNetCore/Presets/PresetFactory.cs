@@ -10,17 +10,20 @@ internal static class PresetFactory
 {
     internal static SecureHeadersOptions CreateOptions(SecurityHeaderPreset preset) => preset switch
     {
-        SecurityHeaderPreset.Basic => Basic(),
+        SecurityHeaderPreset.Basic   => Basic(),
         SecurityHeaderPreset.ApiOnly => ApiOnly(),
-        SecurityHeaderPreset.Spa => Spa(),
-        SecurityHeaderPreset.Strict => Strict(),
-        _ => Basic(),
+        SecurityHeaderPreset.Spa     => Spa(),
+        SecurityHeaderPreset.Strict  => Strict(),
+        _ => throw new ArgumentOutOfRangeException(
+                 nameof(preset), preset,
+                 $"Unknown {nameof(SecurityHeaderPreset)} value '{preset}'. " +
+                 "Update PresetFactory to handle the new preset."),
     };
 
     private static SecureHeadersOptions Basic() => new()
     {
         EnableHsts = true,
-        HstsMaxAge = TimeSpan.FromDays(365),
+        HstsMaxAge = TimeSpan.FromDays(730),
         HstsIncludeSubDomains = true,
         HstsPreload = false,
 
@@ -50,7 +53,7 @@ internal static class PresetFactory
     private static SecureHeadersOptions ApiOnly() => new()
     {
         EnableHsts = true,
-        HstsMaxAge = TimeSpan.FromDays(365),
+        HstsMaxAge = TimeSpan.FromDays(730),
         HstsIncludeSubDomains = true,
         HstsPreload = false,
 
@@ -80,7 +83,7 @@ internal static class PresetFactory
     private static SecureHeadersOptions Spa() => new()
     {
         EnableHsts = true,
-        HstsMaxAge = TimeSpan.FromDays(365),
+        HstsMaxAge = TimeSpan.FromDays(730),
         HstsIncludeSubDomains = true,
         HstsPreload = false,
 

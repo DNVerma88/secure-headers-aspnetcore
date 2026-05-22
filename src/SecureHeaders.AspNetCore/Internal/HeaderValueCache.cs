@@ -57,6 +57,20 @@ internal sealed class HeaderValueCache
     {
         OverrideExistingHeaders = options.OverrideExistingHeaders;
 
+        // ── Defense-in-depth: validate all configurable string header values for ──────
+        // CR/LF/NUL even when the startup validator (IValidateOptions) was not invoked.
+        // This covers UseSecureHeaders(configure) / UseSecureHeaders(preset, configure)
+        // overloads that bypass the DI-registered SecureHeadersOptionsValidator.
+        GuardHeaderValue(options.XFrameOptionsValue,               nameof(options.XFrameOptionsValue));
+        GuardHeaderValue(options.ReferrerPolicyValue,              nameof(options.ReferrerPolicyValue));
+        GuardHeaderValue(options.PermissionsPolicyValue,           nameof(options.PermissionsPolicyValue));
+        GuardHeaderValue(options.CrossOriginOpenerPolicyValue,     nameof(options.CrossOriginOpenerPolicyValue));
+        GuardHeaderValue(options.CrossOriginResourcePolicyValue,   nameof(options.CrossOriginResourcePolicyValue));
+        GuardHeaderValue(options.CrossOriginEmbedderPolicyValue,   nameof(options.CrossOriginEmbedderPolicyValue));
+        GuardHeaderValue(options.XssProtectionValue,               nameof(options.XssProtectionValue));
+        GuardHeaderValue(options.ReportingEndpointsValue,          nameof(options.ReportingEndpointsValue));
+        GuardHeaderValue(options.CspPolicy,                        nameof(options.CspPolicy));
+
         // HSTS
         EmitHsts = options.EnableHsts && (isProduction || options.EnforceHstsInDevelopment);
         if (EmitHsts)
@@ -147,7 +161,7 @@ internal sealed class HeaderValueCache
             removeList.Add(HeaderNames.Server);
         if (options.RemoveXPoweredByHeader)
             removeList.Add(HeaderNames.XPoweredBy);
-        foreach (var h in options.RemoveHeaders)
+        foreach (var h in options.RemoveHeaders ?? [])
         {
             if (!string.IsNullOrWhiteSpace(h))
                 removeList.Add(h);
@@ -156,8 +170,9 @@ internal sealed class HeaderValueCache
         HeadersToRemove = removeList;
 
         // Path exclusions
-        var paths = new List<PathString>(options.ExcludePaths.Count);
-        foreach (var p in options.ExcludePaths)
+        var excludeList = options.ExcludePaths ?? [];
+        var paths = new List<PathString>(excludeList.Count);
+        foreach (var p in excludeList)
         {
             if (!string.IsNullOrWhiteSpace(p))
                 paths.Add(new PathString(p));
@@ -181,5 +196,18 @@ internal sealed class HeaderValueCache
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Throws <see cref="InvalidOperationException"/> if <paramref name="value"/> contains
+    /// CR, LF, or NUL characters that would enable HTTP response splitting.
+    /// </summary>
+    private static void GuardHeaderValue(string? value, string propertyName)
+    {
+        if (!string.IsNullOrEmpty(value) && HeaderSecurity.ContainsInvalidChars(value))
+            throw new InvalidOperationException(
+                $"'{propertyName}' contains invalid CR/LF/NUL characters. " +
+                "These characters can enable HTTP response splitting attacks. " +
+                "Ensure the value contains only valid RFC 7230 header field value characters.");
     }
 }

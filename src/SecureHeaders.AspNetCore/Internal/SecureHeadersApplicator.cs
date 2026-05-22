@@ -50,15 +50,31 @@ internal static class SecureHeadersApplicator
             if (nonceService is not null && cache.CspPolicyTemplate is not null)
             {
                 var nonce = nonceService.GetNonce(context);
-                var cspValue = cache.CspPolicyTemplate.Replace(INonceService.Placeholder, nonce,
-                    StringComparison.Ordinal);
 
-                var headerName = cache.EmitCspReportOnly
-                    ? HeaderNames.ContentSecurityPolicyReportOnly
-                    : HeaderNames.ContentSecurityPolicy;
+                // Defend against a custom INonceService returning a value containing CR/LF/NUL.
+                // DefaultNonceService always returns base64 ([A-Za-z0-9+/=]) which is safe.
+                // An untrusted implementation could return attacker-controlled characters,
+                // enabling HTTP response splitting or crashing the OnStarting callback.
+                if (HeaderSecurity.ContainsInvalidChars(nonce))
+                {
+                    logger?.LogWarning(
+                        "INonceService.GetNonce returned a value containing invalid characters " +
+                        "(CR/LF/NUL). The CSP header will be skipped for this request to prevent " +
+                        "HTTP response splitting. Ensure your INonceService implementation " +
+                        "returns only valid RFC 7230 header value characters.");
+                }
+                else
+                {
+                    var cspValue = cache.CspPolicyTemplate.Replace(INonceService.Placeholder, nonce,
+                        StringComparison.Ordinal);
 
-                SetHeader(headers, headerName, cspValue, enabled: true, cache.OverrideExistingHeaders, logger);
-                logger?.LogTrace("Applied nonce-enabled CSP header: {HeaderName}", headerName);
+                    var headerName = cache.EmitCspReportOnly
+                        ? HeaderNames.ContentSecurityPolicyReportOnly
+                        : HeaderNames.ContentSecurityPolicy;
+
+                    SetHeader(headers, headerName, cspValue, enabled: true, cache.OverrideExistingHeaders, logger);
+                    logger?.LogTrace("Applied nonce-enabled CSP header: {HeaderName}", headerName);
+                }
             }
             else if (nonceService is null)
             {

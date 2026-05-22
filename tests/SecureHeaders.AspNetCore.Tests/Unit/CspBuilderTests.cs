@@ -121,4 +121,86 @@ public sealed class CspBuilderTests
 
         policy.Should().Contain("'nonce-randomNonce'");
     }
+
+    // ── Security: CRLF injection prevention ──────────────────────────────
+
+    [Theory]
+    [InlineData("\r")]
+    [InlineData("\n")]
+    [InlineData("\r\n")]
+    [InlineData("\0")]
+    public void AddSource_DirectiveWithInvalidChars_Throws(string injection)
+    {
+        var builder = new CspBuilder();
+        var act = () => builder.AddSource("script-src" + injection, "'self'");
+        act.Should().Throw<ArgumentException>().WithMessage("*CR/LF/NUL*");
+    }
+
+    [Theory]
+    [InlineData("\r")]
+    [InlineData("\n")]
+    [InlineData("\r\n")]
+    [InlineData("\0")]
+    public void AddSource_SourceValueWithInvalidChars_Throws(string injection)
+    {
+        var builder = new CspBuilder();
+        var act = () => builder.AddSource("script-src", "'self'" + injection);
+        act.Should().Throw<ArgumentException>().WithMessage("*CR/LF/NUL*");
+    }
+
+    [Theory]
+    [InlineData("\r")]
+    [InlineData("\n")]
+    [InlineData("\0")]
+    public void AddDirectiveFlag_WithInvalidChars_Throws(string injection)
+    {
+        var builder = new CspBuilder();
+        var act = () => builder.AddDirectiveFlag("upgrade-insecure-requests" + injection);
+        act.Should().Throw<ArgumentException>().WithMessage("*CR/LF/NUL*");
+    }
+
+    // ── Security: nonce/hash format validation ────────────────────────────
+
+    [Theory]
+    [InlineData("abc'; object-src *")]   // semicolon injection
+    [InlineData("abc' ; script-src *")]  // quote + semicolon injection
+    [InlineData("abc\r\n")]              // CRLF injection
+    public void AddNonce_InvalidBase64_Throws(string badNonce)
+    {
+        var builder = new CspBuilder();
+        var act = () => builder.AddNonce("script-src", badNonce);
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void AddHash_UnknownAlgorithm_Throws()
+    {
+        var builder = new CspBuilder();
+        var act = () => builder.AddHash("script-src", "md5", "abc123==");
+        act.Should().Throw<ArgumentException>().WithMessage("*sha256*sha384*sha512*");
+    }
+
+    [Theory]
+    [InlineData("abc'; inject-directive: evil")]
+    [InlineData("abc\r\nX-Injected: evil")]
+    public void AddHash_InvalidBase64Value_Throws(string badHash)
+    {
+        var builder = new CspBuilder();
+        var act = () => builder.AddHash("script-src", "sha256", badHash);
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Theory]
+    [InlineData("sha256")]
+    [InlineData("SHA256")]
+    [InlineData("sha384")]
+    [InlineData("sha512")]
+    public void AddHash_KnownAlgorithms_AreAccepted(string algorithm)
+    {
+        var policy = new CspBuilder()
+            .AddHash("script-src", algorithm, "abc123==")
+            .Build();
+        // Algorithm is canonicalised to lowercase in the output
+        policy.Should().Contain($"'{algorithm.ToLowerInvariant()}-abc123=='");
+    }
 }

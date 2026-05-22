@@ -216,4 +216,57 @@ public sealed class HeaderValueCacheTests
         // Static CspValue must NOT be set when nonce is in use
         cache.CspValue.Should().BeNull();
     }
+
+    // ── Defense-in-depth: CRLF validation on all configurable string values ──
+
+    [Theory]
+    [InlineData("\r")]
+    [InlineData("\n")]
+    [InlineData("\r\n")]
+    [InlineData("\0")]
+    public void XFrameOptionsValue_WithInvalidChars_Throws(string injection)
+    {
+        var opts = new SecureHeadersOptions { XFrameOptionsValue = "SAMEORIGIN" + injection };
+        var act = () => new HeaderValueCache(opts, isProduction: false);
+        act.Should().Throw<InvalidOperationException>().WithMessage("*XFrameOptionsValue*");
+    }
+
+    [Theory]
+    [InlineData("\r")]
+    [InlineData("\n")]
+    public void ReferrerPolicyValue_WithInvalidChars_Throws(string injection)
+    {
+        var opts = new SecureHeadersOptions { ReferrerPolicyValue = "no-referrer" + injection };
+        var act = () => new HeaderValueCache(opts, isProduction: false);
+        act.Should().Throw<InvalidOperationException>().WithMessage("*ReferrerPolicyValue*");
+    }
+
+    [Theory]
+    [InlineData("\r")]
+    [InlineData("\n")]
+    public void CspPolicy_WithInvalidChars_Throws(string injection)
+    {
+        var opts = new SecureHeadersOptions
+        {
+            EnableCsp = true,
+            CspPolicy = "default-src 'self'" + injection,
+        };
+        var act = () => new HeaderValueCache(opts, isProduction: false);
+        act.Should().Throw<InvalidOperationException>().WithMessage("*CspPolicy*");
+    }
+
+    [Fact]
+    public void NullCollections_DoNotThrow()
+    {
+        // Guard against NullReferenceException when callers set collection
+        // properties to null (e.g. via configuration binding). HeaderValueCache
+        // iterates RemoveHeaders and ExcludePaths — both should be null-safe.
+        var opts = new SecureHeadersOptions
+        {
+            RemoveHeaders = null!,
+            ExcludePaths  = null!,
+        };
+        var act = () => new HeaderValueCache(opts, isProduction: false);
+        act.Should().NotThrow();
+    }
 }
