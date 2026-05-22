@@ -1,5 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using SecureHeaders.AspNetCore.Internal;
 using SecureHeaders.AspNetCore.Options;
+using SecureHeaders.AspNetCore.Services;
 
 namespace SecureHeaders.AspNetCore.Extensions;
 
@@ -9,23 +12,28 @@ namespace SecureHeaders.AspNetCore.Extensions;
 public static class ServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers the secure headers options with default values.
+    /// Registers the secure headers options with default values, the startup options
+    /// validator, and the per-request nonce service.
     /// </summary>
     /// <remarks>
-    /// Calling this is optional — <c>app.UseSecureHeaders()</c> will register the services
-    /// automatically if they have not already been registered. Use this overload when you
-    /// want to configure options via <c>appsettings.json</c> or other
-    /// <see cref="Microsoft.Extensions.Options.IConfigureOptions{TOptions}"/> mechanisms.
+    /// Calling this is optional when using the <c>UseSecureHeaders(Action&lt;…&gt;)</c> or
+    /// preset overloads. Use this overload when you want to configure options via
+    /// <c>appsettings.json</c>, <see cref="IConfigureOptions{TOptions}"/>, or when
+    /// <see cref="SecureHeadersOptions.EnableCspNonce"/> is <see langword="true"/>.
     /// </remarks>
     public static IServiceCollection AddSecureHeaders(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
-        services.AddOptions<SecureHeadersOptions>();
+        services.AddOptions<SecureHeadersOptions>()
+                .ValidateOnStart();
+        services.AddSingleton<IValidateOptions<SecureHeadersOptions>, SecureHeadersOptionsValidator>();
+        services.AddSingleton<INonceService, DefaultNonceService>();
         return services;
     }
 
     /// <summary>
-    /// Registers the secure headers options, applying the supplied configuration delegate.
+    /// Registers the secure headers options, applying the supplied configuration delegate,
+    /// the startup options validator, and the per-request nonce service.
     /// </summary>
     public static IServiceCollection AddSecureHeaders(
         this IServiceCollection services,
@@ -34,7 +42,12 @@ public static class ServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configure);
 
-        services.AddOptions<SecureHeadersOptions>().Configure(configure);
+        services.AddOptions<SecureHeadersOptions>()
+                .Configure(configure)
+                .ValidateOnStart();
+        services.AddSingleton<IValidateOptions<SecureHeadersOptions>, SecureHeadersOptionsValidator>();
+        services.AddSingleton<INonceService, DefaultNonceService>();
         return services;
     }
 }
+

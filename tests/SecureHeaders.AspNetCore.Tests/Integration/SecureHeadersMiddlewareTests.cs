@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -409,4 +410,239 @@ public sealed class SecureHeadersMiddlewareTests
 
         HasHeader(response, HeaderNames.CrossOriginEmbedderPolicy).Should().BeTrue();
     }
+
+    // -------------------------------------------------------------------------
+    // X-XSS-Protection
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task XssProtection_IsZero_WhenEnabled()
+    {
+        var response = await SendRequestAsync(o => o.EnableXssProtectionHeader = true);
+        HasHeader(response, HeaderNames.XXssProtection).Should().BeTrue();
+        GetHeaderValues(response, HeaderNames.XXssProtection).Should().Contain("0");
+    }
+
+    [Fact]
+    public async Task XssProtection_IsAbsent_WhenDisabled()
+    {
+        var response = await SendRequestAsync(o => o.EnableXssProtectionHeader = false);
+        HasHeader(response, HeaderNames.XXssProtection).Should().BeFalse();
+    }
+
+    // -------------------------------------------------------------------------
+    // Reporting-Endpoints
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task ReportingEndpoints_IsPresent_WhenEnabled()
+    {
+        const string endpointsValue = "default=\"https://reporting.example.com/\"";
+        var response = await SendRequestAsync(o =>
+        {
+            o.EnableReportingEndpoints = true;
+            o.ReportingEndpointsValue = endpointsValue;
+        });
+
+        HasHeader(response, HeaderNames.ReportingEndpoints).Should().BeTrue();
+        GetHeaderValues(response, HeaderNames.ReportingEndpoints).Should().Contain(endpointsValue);
+    }
+
+    [Fact]
+    public async Task ReportingEndpoints_IsAbsent_WhenDisabled()
+    {
+        var response = await SendRequestAsync(o => o.EnableReportingEndpoints = false);
+        HasHeader(response, HeaderNames.ReportingEndpoints).Should().BeFalse();
+    }
+
+    // -------------------------------------------------------------------------
+    // Path exclusion
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task ExcludedPath_DoesNotReceiveSecureHeaders()
+    {
+        using var host = await new HostBuilder()
+            .ConfigureWebHost(webHost =>
+            {
+                webHost.UseTestServer();
+                webHost.UseEnvironment(Environments.Production);
+                webHost.ConfigureServices(s => s.AddSecureHeaders());
+                webHost.Configure(app =>
+                {
+                    app.UseSecureHeaders(o =>
+                    {
+                        o.EnableXContentTypeOptions = true;
+                        o.ExcludePaths.Add("/healthz");
+                    });
+                    app.Run(ctx =>
+                    {
+                        ctx.Response.StatusCode = 200;
+                        return Task.CompletedTask;
+                    });
+                });
+            })
+            .StartAsync();
+
+        var client = host.GetTestClient();
+        var response = await client.GetAsync("/healthz");
+
+        HasHeader(response, HeaderNames.XContentTypeOptions).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task NonExcludedPath_ReceivesSecureHeaders_EvenWhenOtherPathsExcluded()
+    {
+        using var host = await new HostBuilder()
+            .ConfigureWebHost(webHost =>
+            {
+                webHost.UseTestServer();
+                webHost.UseEnvironment(Environments.Production);
+                webHost.ConfigureServices(s => s.AddSecureHeaders());
+                webHost.Configure(app =>
+                {
+                    app.UseSecureHeaders(o =>
+                    {
+                        o.EnableXContentTypeOptions = true;
+                        o.ExcludePaths.Add("/healthz");
+                    });
+                    app.Run(ctx =>
+                    {
+                        ctx.Response.StatusCode = 200;
+                        return Task.CompletedTask;
+                    });
+                });
+            })
+            .StartAsync();
+
+        var client = host.GetTestClient();
+        var response = await client.GetAsync("/api/data");
+
+        HasHeader(response, HeaderNames.XContentTypeOptions).Should().BeTrue();
+    }
+
+    // -------------------------------------------------------------------------
+    // CSP Nonce
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task CspNonce_IsSubstituted_InCspHeader()
+    {
+        using var host = await new HostBuilder()
+            .ConfigureWebHost(webHost =>
+            {
+                webHost.UseTestServer();
+                webHost.UseEnvironment(Environments.Development);
+                webHost.ConfigureServices(s =>
+                {
+                    s.AddSecureHeaders(o =>
+                    {
+                        o.EnableCsp = true;
+                        o.CspPolicy = "script-src 'nonce-__nonce__';";
+                        o.EnableCspNonce = true;
+                    });
+                });
+                webHost.Configure(app =>
+                {
+                    app.UseSecureHeaders();
+                    app.Run(ctx =>
+                    {
+                        ctx.Response.StatusCode = 200;
+                        return Task.CompletedTask;
+                    });
+                });
+            })
+            .StartAsync();
+
+        var client = host.GetTestClient();
+        var response1 = await client.GetAsync("/");
+        var response2 = await client.GetAsync("/");
+
+        var csp1 = GetHeaderValues(response1, HeaderNames.ContentSecurityPolicy).Single();
+        var csp2 = GetHeaderValues(response2, HeaderNames.ContentSecurityPolicy).Single();
+
+        // Nonce placeholder must be replaced
+        csp1.Should().NotContain("__nonce__");
+        csp2.Should().NotContain("__nonce__");
+
+        // Each request must get a different nonce (probabilistic but base64-32-byte is unique)
+        csp1.Should().NotBe(csp2);
+    }
+
+    // -------------------------------------------------------------------------
+    // WithSecureHeaders endpoint filter
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task WithSecureHeaders_EndpointFilter_AppliesHeaders()
+    {
+        using var host = await new HostBuilder()
+            .ConfigureWebHost(webHost =>
+            {
+                webHost.UseTestServer();
+                webHost.UseEnvironment(Environments.Production);
+                webHost.ConfigureServices(s =>
+                {
+                    s.AddRouting();
+                    s.AddSecureHeaders();
+                });
+                webHost.Configure(app =>
+                {
+                    app.UseRouting();
+                    app.UseEndpoints(endpoints =>
+                    {
+                        endpoints.MapGet("/secure", async ctx =>
+                        {
+                            ctx.Response.StatusCode = 200;
+                            await ctx.Response.WriteAsync("ok");
+                        }).WithSecureHeaders(SecurityHeaderPreset.ApiOnly);
+                    });
+                });
+            })
+            .StartAsync();
+
+        var client = host.GetTestClient();
+        var response = await client.GetAsync("/secure");
+
+        HasHeader(response, HeaderNames.XContentTypeOptions).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task WithSecureHeaders_EndpointFilter_WithCustomOptions()
+    {
+        using var host = await new HostBuilder()
+            .ConfigureWebHost(webHost =>
+            {
+                webHost.UseTestServer();
+                webHost.UseEnvironment(Environments.Production);
+                webHost.ConfigureServices(s =>
+                {
+                    s.AddRouting();
+                    s.AddSecureHeaders();
+                });
+                webHost.Configure(app =>
+                {
+                    app.UseRouting();
+                    app.UseEndpoints(endpoints =>
+                    {
+                        endpoints.MapGet("/secure", async ctx =>
+                        {
+                            ctx.Response.StatusCode = 200;
+                            await ctx.Response.WriteAsync("ok");
+                        }).WithSecureHeaders(o =>
+                                 {
+                                     o.EnableCsp = true;
+                                     o.CspPolicy = "default-src 'self';";
+                                 });
+                    });
+                });
+            })
+            .StartAsync();
+
+        var client = host.GetTestClient();
+        var response = await client.GetAsync("/secure");
+
+        HasHeader(response, HeaderNames.ContentSecurityPolicy).Should().BeTrue();
+    }
 }
+

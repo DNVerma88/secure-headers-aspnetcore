@@ -1,8 +1,8 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using SecureHeaders.AspNetCore.Constants;
 using SecureHeaders.AspNetCore.Internal;
 using SecureHeaders.AspNetCore.Models;
 using SecureHeaders.AspNetCore.Options;
@@ -11,12 +11,14 @@ namespace SecureHeaders.AspNetCore.Middleware;
 
 /// <summary>
 /// ASP.NET Core middleware that adds security-related HTTP response headers to every response.
+/// Paths listed in <see cref="SecureHeadersOptions.ExcludePaths"/> are passed through unchanged.
 /// </summary>
 public sealed class SecureHeadersMiddleware
 {
     private readonly RequestDelegate _next;
     private readonly HeaderValueCache _cache;
     private readonly IReadOnlyList<CustomHeader> _customHeaders;
+    private readonly ILogger<SecureHeadersMiddleware> _logger;
 
     /// <summary>
     /// Initializes a new instance of <see cref="SecureHeadersMiddleware"/>.
@@ -24,25 +26,39 @@ public sealed class SecureHeadersMiddleware
     public SecureHeadersMiddleware(
         RequestDelegate next,
         IOptions<SecureHeadersOptions> options,
-        IWebHostEnvironment environment)
+        IWebHostEnvironment environment,
+        ILogger<SecureHeadersMiddleware> logger)
     {
         ArgumentNullException.ThrowIfNull(next);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(environment);
+        ArgumentNullException.ThrowIfNull(logger);
 
         _next = next;
+        _logger = logger;
         var opts = options.Value;
-        bool isProduction = environment.IsProduction();
+        var isProduction = environment.IsProduction();
         _cache = new HeaderValueCache(opts, isProduction);
+        // Snapshot the list at construction time; runtime mutations to options have no effect.
         _customHeaders = [.. opts.CustomHeaders];
     }
 
     /// <summary>
     /// Processes the HTTP request, adds security headers, then calls the next middleware.
+    /// Skips header injection for paths that match <see cref="SecureHeadersOptions.ExcludePaths"/>.
     /// </summary>
     public Task InvokeAsync(HttpContext context)
     {
-        // Register a callback so headers are written before the response body starts.
+        if (_cache.IsExcluded(context.Request.Path))
+        {
+            _logger.LogTrace(
+                "SecureHeaders: skipping path {Path} (matched ExcludePaths).",
+                context.Request.Path);
+            return _next(context);
+        }
+
+        // Register callback before passing control downstream so headers are
+        // written just before the response body starts.
         context.Response.OnStarting(ApplyHeaders, context);
         return _next(context);
     }
@@ -50,43 +66,14 @@ public sealed class SecureHeadersMiddleware
     private Task ApplyHeaders(object state)
     {
         var context = (HttpContext)state;
-        var headers = context.Response.Headers;
-
-        // Remove unwanted informational headers first.
-        foreach (var name in _cache.HeadersToRemove)
-            headers.Remove(name);
-
-        // Write security headers.
-        SetHeader(headers, HeaderNames.StrictTransportSecurity, _cache.HstsValue, _cache.EmitHsts);
-        SetHeader(headers, HeaderNames.XContentTypeOptions, HeaderDefaults.XContentTypeOptionsValue, _cache.EmitXContentTypeOptions);
-        SetHeader(headers, HeaderNames.XFrameOptions, _cache.XFrameOptionsValue, _cache.EmitXFrameOptions);
-        SetHeader(headers, HeaderNames.ReferrerPolicy, _cache.ReferrerPolicyValue, _cache.EmitReferrerPolicy);
-        SetHeader(headers, HeaderNames.PermissionsPolicy, _cache.PermissionsPolicyValue, _cache.EmitPermissionsPolicy);
-        SetHeader(headers, HeaderNames.CrossOriginOpenerPolicy, _cache.CoopValue, _cache.EmitCoop);
-        SetHeader(headers, HeaderNames.CrossOriginResourcePolicy, _cache.CorpValue, _cache.EmitCorp);
-        SetHeader(headers, HeaderNames.CrossOriginEmbedderPolicy, _cache.CoepValue, _cache.EmitCoep);
-        SetHeader(headers, HeaderNames.ContentSecurityPolicy, _cache.CspValue, _cache.EmitCsp);
-        SetHeader(headers, HeaderNames.ContentSecurityPolicyReportOnly, _cache.CspReportOnlyValue, _cache.EmitCspReportOnly);
-
-        // Custom headers.
-        for (int i = 0; i < _customHeaders.Count; i++)
-        {
-            var ch = _customHeaders[i];
-            if (ch.Override || !headers.ContainsKey(ch.Name))
-                headers[ch.Name] = ch.Value;
-        }
-
+        _logger.LogTrace("SecureHeaders: applying headers for {Path}.", context.Request.Path);
+        SecureHeadersApplicator.Apply(
+            context.Response.Headers,
+            _cache,
+            _customHeaders,
+            context,
+            _logger);
         return Task.CompletedTask;
     }
-
-    private void SetHeader(IHeaderDictionary headers, string name, string? value, bool enabled)
-    {
-        if (!enabled || value is null)
-            return;
-
-        if (!_cache.OverrideExistingHeaders && headers.ContainsKey(name))
-            return;
-
-        headers[name] = value;
-    }
 }
+

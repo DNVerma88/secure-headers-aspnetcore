@@ -105,6 +105,27 @@ public sealed class PresetFactoryTests
         }
     }
 
+    [Theory]
+    [InlineData(SecurityHeaderPreset.Basic)]
+    [InlineData(SecurityHeaderPreset.ApiOnly)]
+    [InlineData(SecurityHeaderPreset.Spa)]
+    [InlineData(SecurityHeaderPreset.Strict)]
+    public void AllPresets_HstsMaxAge_IsAtLeast730Days(SecurityHeaderPreset preset)
+    {
+        var opts = GetOptions(preset);
+        opts.HstsMaxAge.Should().BeGreaterThanOrEqualTo(TimeSpan.FromDays(730),
+            "OWASP recommends a minimum HSTS max-age of 2 years (730 days)");
+    }
+
+    [Fact]
+    public void UnknownPresetValue_Throws_ArgumentOutOfRangeException()
+    {
+        var unknownPreset = (SecurityHeaderPreset)999;
+        var act = () => PresetFactory.CreateOptions(unknownPreset);
+        act.Should().Throw<ArgumentOutOfRangeException>()
+           .WithMessage("*Unknown SecurityHeaderPreset*");
+    }
+
     private static SecureHeadersOptions GetOptions(SecurityHeaderPreset preset)
         => PresetFactory.CreateOptions(preset);
 }
