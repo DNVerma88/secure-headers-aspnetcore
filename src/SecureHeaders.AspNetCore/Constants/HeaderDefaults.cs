@@ -23,4 +23,7 @@ internal static class HeaderDefaults
     internal const string CorpCrossOrigin = "cross-origin";
     internal const string CoepRequireCorp = "require-corp";
     internal const string CoepUnsafeNone = "unsafe-none";
+
+    // X-XSS-Protection: disable the legacy browser XSS auditor (recommended by OWASP)
+    internal const string XXssProtectionDisable = "0";
 }

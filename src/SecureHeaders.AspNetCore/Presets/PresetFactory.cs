@@ -42,6 +42,7 @@ internal static class PresetFactory
         EnableCrossOriginEmbedderPolicy = false,
 
         EnableCsp = false,
+        EnableXssProtectionHeader = true,
         RemoveServerHeader = true,
         RemoveXPoweredByHeader = true,
     };
@@ -71,6 +72,7 @@ internal static class PresetFactory
         EnableCrossOriginEmbedderPolicy = false,
 
         EnableCsp = false,
+        EnableXssProtectionHeader = true,
         RemoveServerHeader = true,
         RemoveXPoweredByHeader = true,
     };
@@ -104,6 +106,7 @@ internal static class PresetFactory
         CrossOriginEmbedderPolicyValue = HeaderDefaults.CoepUnsafeNone,
 
         EnableCsp = false,
+        EnableXssProtectionHeader = true,
         RemoveServerHeader = true,
         RemoveXPoweredByHeader = true,
     };
@@ -138,6 +141,7 @@ internal static class PresetFactory
         EnableCsp = true,
         CspPolicy = "default-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests;",
 
+        EnableXssProtectionHeader = true,
         RemoveServerHeader = true,
         RemoveXPoweredByHeader = true,
     };

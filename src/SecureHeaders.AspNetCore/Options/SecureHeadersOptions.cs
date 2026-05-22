@@ -219,4 +219,71 @@ public sealed class SecureHeadersOptions
     /// Set to <see langword="true"/> to always overwrite existing headers.
     /// </summary>
     public bool OverrideExistingHeaders { get; set; }
+
+    // -------------------------------------------------------------------------
+    // X-XSS-Protection
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Send the <c>X-XSS-Protection</c> header.
+    /// Default: <see langword="true"/> — the header is sent with value <c>0</c>
+    /// to disable the legacy Internet Explorer / early Chrome XSS auditor,
+    /// which is known to introduce vulnerabilities rather than prevent them.
+    /// </summary>
+    public bool EnableXssProtectionHeader { get; set; } = true;
+
+    /// <summary>
+    /// The <c>X-XSS-Protection</c> header value.
+    /// Default: <c>0</c> (disable the broken legacy XSS auditor — recommended by OWASP).
+    /// </summary>
+    public string XssProtectionValue { get; set; } = HeaderDefaults.XXssProtectionDisable;
+
+    // -------------------------------------------------------------------------
+    // Reporting-Endpoints
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Send the <c>Reporting-Endpoints</c> header (W3C Reporting API).
+    /// Pair with <c>report-to</c> in CSP to receive violation reports.
+    /// Default: <see langword="false"/>.
+    /// </summary>
+    public bool EnableReportingEndpoints { get; set; }
+
+    /// <summary>
+    /// The <c>Reporting-Endpoints</c> header value, e.g.
+    /// <c>default="https://reports.example.com/csp"</c>.
+    /// </summary>
+    public string? ReportingEndpointsValue { get; set; }
+
+    // -------------------------------------------------------------------------
+    // CSP nonce
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// When <see langword="true"/>, the middleware resolves <see cref="Services.INonceService"/>
+    /// from the request service container and replaces every occurrence of the literal
+    /// token <c>__nonce__</c> inside <see cref="CspPolicy"/> with a fresh, per-request
+    /// cryptographic nonce.
+    /// <para>
+    /// Requires <c>builder.Services.AddSecureHeaders()</c> to be called so that
+    /// <see cref="Services.INonceService"/> is registered in the DI container.
+    /// </para>
+    /// Default: <see langword="false"/>.
+    /// </summary>
+    public bool EnableCspNonce { get; set; }
+
+    // -------------------------------------------------------------------------
+    // Path exclusions
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Request paths that should bypass the secure-headers middleware entirely.
+    /// Useful for health-check endpoints, Prometheus metrics, or other internal
+    /// routes that must not carry browser-oriented security headers.
+    /// <para>Matching is case-insensitive prefix-segment matching
+    /// (<see cref="Microsoft.AspNetCore.Http.PathString.StartsWithSegments(Microsoft.AspNetCore.Http.PathString)"/>).
+    /// </para>
+    /// Example: <c>ExcludePaths = ["/healthz", "/metrics"]</c>
+    /// </summary>
+    public IList<string> ExcludePaths { get; set; } = [];
 }

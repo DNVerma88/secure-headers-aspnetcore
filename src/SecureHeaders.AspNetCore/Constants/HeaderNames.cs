@@ -40,4 +40,10 @@ public static class HeaderNames
 
     /// <summary>X-Powered-By</summary>
     public const string XPoweredBy = "X-Powered-By";
+
+    /// <summary>X-XSS-Protection</summary>
+    public const string XXssProtection = "X-XSS-Protection";
+
+    /// <summary>Reporting-Endpoints</summary>
+    public const string ReportingEndpoints = "Reporting-Endpoints";
 }

@@ -1,3 +1,5 @@
+using SecureHeaders.AspNetCore.Internal;
+
 namespace SecureHeaders.AspNetCore.Models;
 
 /// <summary>
@@ -30,6 +32,8 @@ public sealed class CustomHeader
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         ArgumentException.ThrowIfNullOrWhiteSpace(value);
+        HeaderSecurity.EnsureNoInvalidChars(name, nameof(name));
+        HeaderSecurity.EnsureNoInvalidChars(value, nameof(value));
         Name = name;
         Value = value;
         Override = overrideExisting;
