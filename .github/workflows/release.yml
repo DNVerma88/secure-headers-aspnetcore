@@ -18,6 +18,7 @@ env:
 
 permissions:
   contents: write
+  id-token: write   # Required for NuGet trusted publishing (OIDC)
 
 jobs:
   release:
@@ -94,23 +95,24 @@ jobs:
           /p:Version=${{ steps.version.outputs.VERSION }}
           --output ./artifacts
 
+      - name: NuGet login (Trusted Publishing)
+        uses: NuGet/login@v1
+        id: nuget-login
+        with:
+          # NuGet.org username (profile name) — not an email address
+          user: deepn87
+
       - name: Publish to NuGet.org
-        env:
-          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
         run: |
-          if [ -z "$NUGET_API_KEY" ]; then
-            echo "::error::NUGET_API_KEY secret is not set in repository settings."
-            exit 1
-          fi
-          # Push the main package
+          # Push the main package using the short-lived key from Trusted Publishing
           dotnet nuget push "./artifacts/*.nupkg" \
-            --api-key "$NUGET_API_KEY" \
+            --api-key "${{ steps.nuget-login.outputs.NUGET_API_KEY }}" \
             --source "https://api.nuget.org/v3/index.json" \
             --skip-duplicate
           # Push symbols package separately (NuGet.org accepts snupkg individually)
           if ls ./artifacts/*.snupkg 1>/dev/null 2>&1; then
             dotnet nuget push "./artifacts/*.snupkg" \
-              --api-key "$NUGET_API_KEY" \
+              --api-key "${{ steps.nuget-login.outputs.NUGET_API_KEY }}" \
               --source "https://api.nuget.org/v3/index.json" \
               --skip-duplicate
           fi
