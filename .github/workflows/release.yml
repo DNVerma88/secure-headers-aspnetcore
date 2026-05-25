@@ -112,13 +112,24 @@ jobs:
 
       - name: Publish to NuGet.org
         run: |
-          # Push the main package using the short-lived key from Trusted Publishing
-          dotnet nuget push "./publish/*.nupkg" \
+          # Capture push output so we can detect whether the package was actually
+          # uploaded or skipped as a duplicate.  This matters for the snupkg step:
+          # if the nupkg was skipped (already published), the snupkg generated from
+          # this build targets ALL current TFMs (net8.0 + net10.0), but the
+          # already-published nupkg may only contain a subset of those TFMs.
+          # Uploading such a mismatched snupkg causes NuGet.org to reject it with
+          # "pdb(s) for dll(s) not found in the nuget package".
+          NUPKG_OUTPUT=$(dotnet nuget push "./publish/*.nupkg" \
             --api-key "${{ steps.nuget-login.outputs.NUGET_API_KEY }}" \
             --source "https://api.nuget.org/v3/index.json" \
-            --skip-duplicate
-          # Push symbols package separately (NuGet.org accepts snupkg individually)
-          if ls ./publish/*.snupkg 1>/dev/null 2>&1; then
+            --skip-duplicate 2>&1)
+          echo "$NUPKG_OUTPUT"
+
+          if echo "$NUPKG_OUTPUT" | grep -qiE "already exists|Conflict|409"; then
+            echo "::notice::Nupkg already published — skipping symbols upload to prevent TFM mismatch."
+          elif ls ./publish/*.snupkg 1>/dev/null 2>&1; then
+            # Push symbols only when the nupkg was freshly published in this run,
+            # guaranteeing the snupkg and nupkg were produced from the same build.
             dotnet nuget push "./publish/*.snupkg" \
               --api-key "${{ steps.nuget-login.outputs.NUGET_API_KEY }}" \
               --source "https://api.nuget.org/v3/index.json" \
