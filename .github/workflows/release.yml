@@ -20,6 +20,12 @@ permissions:
   contents: write
   id-token: write   # Required for NuGet trusted publishing (OIDC)
 
+# Prevent a second run (triggered by the tag push that workflow_dispatch creates)
+# from racing with the first run and uploading a mismatched .snupkg.
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
   release:
     name: Publish NuGet Package
@@ -72,7 +78,7 @@ jobs:
         run: dotnet restore
 
       - name: Build
-        run: dotnet build --configuration Release --no-restore
+        run: dotnet build --configuration Release --no-restore /p:Version=${{ steps.version.outputs.VERSION }}
 
       - name: Test
         run: dotnet test --configuration Release --no-build --verbosity normal
@@ -91,9 +97,10 @@ jobs:
           dotnet pack
           src/SecureHeaders.AspNetCore/SecureHeaders.AspNetCore.csproj
           --configuration Release
+          --no-build
           --no-restore
           /p:Version=${{ steps.version.outputs.VERSION }}
-          --output ./artifacts
+          --output ./publish
 
       - name: NuGet login (Trusted Publishing)
         uses: NuGet/login@v1
@@ -105,13 +112,13 @@ jobs:
       - name: Publish to NuGet.org
         run: |
           # Push the main package using the short-lived key from Trusted Publishing
-          dotnet nuget push "./artifacts/*.nupkg" \
+          dotnet nuget push "./publish/*.nupkg" \
             --api-key "${{ steps.nuget-login.outputs.NUGET_API_KEY }}" \
             --source "https://api.nuget.org/v3/index.json" \
             --skip-duplicate
           # Push symbols package separately (NuGet.org accepts snupkg individually)
-          if ls ./artifacts/*.snupkg 1>/dev/null 2>&1; then
-            dotnet nuget push "./artifacts/*.snupkg" \
+          if ls ./publish/*.snupkg 1>/dev/null 2>&1; then
+            dotnet nuget push "./publish/*.snupkg" \
               --api-key "${{ steps.nuget-login.outputs.NUGET_API_KEY }}" \
               --source "https://api.nuget.org/v3/index.json" \
               --skip-duplicate
@@ -122,8 +129,8 @@ jobs:
         with:
           tag_name: ${{ steps.version.outputs.TAG }}
           files: |
-            ./artifacts/*.nupkg
-            ./artifacts/*.snupkg
+            ./publish/*.nupkg
+            ./publish/*.snupkg
           generate_release_notes: true
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
