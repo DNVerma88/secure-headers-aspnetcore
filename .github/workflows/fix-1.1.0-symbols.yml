@@ -2,13 +2,16 @@ name: Fix 1.1.0 Symbols (one-time)
 
 # One-time workflow to republish corrected symbols for SecureHeaders.AspNetCore 1.1.0.
 #
-# Background: the original 1.1.0 .snupkg was rejected by NuGet.org because it contained
-# a lib/net10.0/SecureHeaders.AspNetCore.pdb entry while the already-published .nupkg
-# only has lib/net8.0/SecureHeaders.AspNetCore.dll.  This workflow downloads the original
-# snupkg from the GitHub Release, removes the net10.0 PDB entry, and re-uploads.
+# Background: the original 1.1.0 .snupkg was rejected by NuGet.org because:
+#   - it contained lib/net10.0/SecureHeaders.AspNetCore.pdb with no matching DLL, and
+#   - the embedded nuspec listed net10.0 in <frameworkReferences>, which NuGet.org
+#     validates against the DLLs in the published nupkg (net8.0 only).
 #
-# Run ONCE via Actions → Fix 1.1.0 Symbols → Run workflow.
-# Delete this file once the symbols appear on NuGet.org.
+# This workflow downloads the original snupkg from the GitHub Release, patches it
+# using .github/scripts/fix_snupkg.py, and re-uploads via the NUGET_API_KEY secret.
+#
+# Run ONCE via Actions → Fix 1.1.0 Symbols (one-time) → Run workflow.
+# Delete this file (and .github/scripts/fix_snupkg.py) once symbols appear on NuGet.org.
 
 on:
   workflow_dispatch:
@@ -27,6 +30,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout (needed for fix_snupkg.py)
+        uses: actions/checkout@v4
+
       - name: Download 1.1.0 snupkg from GitHub Release
         run: |
           gh release download v1.1.0 \
@@ -37,60 +43,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-      - name: Remove net10.0 PDB and patch nuspec in snupkg
+      - name: Patch snupkg (remove net10.0 PDB + nuspec groups)
         run: |
           SNUPKG=$(ls ./snupkg-work/*.snupkg)
           echo "Working on: $SNUPKG"
-
-          # A .snupkg is a zip archive.
-          # Two changes are needed so NuGet.org validation passes:
-          #   1. Remove lib/net10.0/SecureHeaders.AspNetCore.pdb  (no matching DLL in the published nupkg)
-          #   2. Strip net10.0 groups from the nuspec inside the snupkg  (NuGet.org validates
-          #      <frameworkReferences> groups against the DLLs present in the nupkg)
-          python3 - "$SNUPKG" <<'EOF'
-import sys, zipfile, os
-import xml.etree.ElementTree as ET
-
-src = sys.argv[1]
-tmp = src + ".tmp"
-NET10 = "net10.0"
-PDB_ENTRY = "lib/net10.0/SecureHeaders.AspNetCore.pdb"
-NUSPEC   = "SecureHeaders.AspNetCore.nuspec"
-NS = "http://schemas.microsoft.com/packaging/2012/06/nuspec.xsd"
-
-def strip_net10(xml_bytes):
-    ET.register_namespace('', NS)
-    root = ET.fromstring(xml_bytes.decode('utf-8-sig'))
-    metadata = root.find(f'{{{NS}}}metadata')
-    for tag in ('dependencies', 'frameworkReferences'):
-        container = metadata.find(f'{{{NS}}}{tag}')
-        if container is None:
-            continue
-        for group in list(container.findall(f'{{{NS}}}group')):
-            if group.get('targetFramework', '').lower() == NET10:
-                print(f"  nuspec: removing <{tag}><group targetFramework='{group.get('targetFramework')}'>")
-                container.remove(group)
-    xml_str = ET.tostring(root, encoding='unicode')
-    return ('<?xml version="1.0" encoding="utf-8"?>\n' + xml_str).encode('utf-8')
-
-with zipfile.ZipFile(src, 'r') as zin, zipfile.ZipFile(tmp, 'w', compression=zipfile.ZIP_DEFLATED) as zout:
-    for item in zin.infolist():
-        if item.filename == PDB_ENTRY:
-            print(f"Removing PDB: {item.filename}")
-            continue
-        data = zin.read(item.filename)
-        if item.filename == NUSPEC:
-            print(f"Patching:     {item.filename}")
-            data = strip_net10(data)
-        zout.writestr(item, data)
-
-os.replace(tmp, src)
-
-print("\nVerifying remaining entries:")
-with zipfile.ZipFile(src, 'r') as z:
-    for e in z.infolist():
-        print(f"  {e.filename}  ({e.file_size} bytes)")
-EOF
+          python3 .github/scripts/fix_snupkg.py "$SNUPKG"
 
       - name: Push corrected snupkg to NuGet.org
         run: |
@@ -99,3 +56,4 @@ EOF
           dotnet nuget push "$SNUPKG" \
             --api-key "${{ secrets.NUGET_API_KEY }}" \
             --source "https://api.nuget.org/v3/index.json"
+
