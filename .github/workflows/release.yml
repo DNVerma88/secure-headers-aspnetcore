@@ -30,6 +30,7 @@ jobs:
   release:
     name: Publish NuGet Package
     runs-on: ubuntu-latest
+    environment: nuget-publish   # Serialises concurrent runs; add approval gate in repo Settings → Environments
 
     steps:
       - name: Checkout
