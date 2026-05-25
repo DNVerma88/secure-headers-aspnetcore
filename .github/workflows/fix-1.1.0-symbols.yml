@@ -1,0 +1,79 @@
+name: Fix 1.1.0 Symbols (one-time)
+
+# One-time workflow to republish corrected symbols for SecureHeaders.AspNetCore 1.1.0.
+#
+# Background: the original 1.1.0 .snupkg was rejected by NuGet.org because it contained
+# a lib/net10.0/SecureHeaders.AspNetCore.pdb entry while the already-published .nupkg
+# only has lib/net8.0/SecureHeaders.AspNetCore.dll.  This workflow downloads the original
+# snupkg from the GitHub Release, removes the net10.0 PDB entry, and re-uploads.
+#
+# Run ONCE via Actions → Fix 1.1.0 Symbols → Run workflow.
+# Delete this file once the symbols appear on NuGet.org.
+
+on:
+  workflow_dispatch:
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_NOLOGO: true
+
+permissions:
+  contents: read
+
+jobs:
+  fix-symbols:
+    name: Republish corrected 1.1.0 symbols
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download 1.1.0 snupkg from GitHub Release
+        run: |
+          gh release download v1.1.0 \
+            --repo "${{ github.repository }}" \
+            --pattern "*.snupkg" \
+            --dir ./snupkg-work
+          ls -la ./snupkg-work/
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Remove net10.0 PDB from snupkg
+        run: |
+          SNUPKG=$(ls ./snupkg-work/*.snupkg)
+          echo "Working on: $SNUPKG"
+
+          # A .snupkg is a zip archive — use Python's zipfile to remove one entry
+          python3 - "$SNUPKG" <<'EOF'
+          import sys, zipfile, os, shutil
+
+          src = sys.argv[1]
+          tmp = src + ".tmp"
+          target = "lib/net10.0/SecureHeaders.AspNetCore.pdb"
+          removed = False
+
+          with zipfile.ZipFile(src, 'r') as zin, zipfile.ZipFile(tmp, 'w', compression=zipfile.ZIP_DEFLATED) as zout:
+              for item in zin.infolist():
+                  if item.filename == target:
+                      print(f"Removing: {item.filename}")
+                      removed = True
+                  else:
+                      zout.writestr(item, zin.read(item.filename))
+
+          if not removed:
+              print(f"WARNING: entry '{target}' not found — nothing removed")
+
+          os.replace(tmp, src)
+
+          print("Remaining entries:")
+          with zipfile.ZipFile(src, 'r') as z:
+              for e in z.infolist():
+                  print(f"  {e.filename}  ({e.file_size} bytes)")
+          EOF
+
+      - name: Push corrected snupkg to NuGet.org
+        run: |
+          SNUPKG=$(ls ./snupkg-work/*.snupkg)
+          echo "Pushing: $SNUPKG"
+          dotnet nuget push "$SNUPKG" \
+            --api-key "${{ secrets.NUGET_API_KEY }}" \
+            --source "https://api.nuget.org/v3/index.json"
