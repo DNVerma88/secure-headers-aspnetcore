@@ -75,6 +75,9 @@ jobs:
           git tag -a "${{ steps.version.outputs.TAG }}" -m "Release ${{ steps.version.outputs.TAG }}"
           git push origin "${{ steps.version.outputs.TAG }}"
 
+      - name: Clean
+        run: dotnet clean --configuration Release
+
       - name: Restore
         run: dotnet restore
 
